@@ -8,15 +8,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func NewDatabase(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
-	config, err := pgxpool.ParseConfig(databaseURL)
+type DatabaseConfig struct {
+	URL             string
+	MaxConns        int32
+	MinConns        int32
+	MaxConnLifetime time.Duration
+}
+
+func NewDatabase(ctx context.Context, cfg DatabaseConfig) (*pgxpool.Pool, error) {
+	config, err := pgxpool.ParseConfig(cfg.URL)
 	if err != nil {
 		return nil, fmt.Errorf("parse database config: %w", err)
 	}
 
-	config.MaxConns = 10
-	config.MinConns = 2
-	config.MaxConnLifetime = time.Hour
+	config.MaxConns = cfg.MaxConns
+	config.MinConns = cfg.MinConns
+	config.MaxConnLifetime = cfg.MaxConnLifetime
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {

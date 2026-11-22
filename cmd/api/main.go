@@ -10,19 +10,25 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ibraheemcisse/flashbulb/internal/config"
 	"github.com/ibraheemcisse/flashbulb/internal/platform"
 )
 
 func main() {
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		log.Fatal("DATABASE_URL environment variable is required")
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("configuration error: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	db, err := platform.NewDatabase(ctx, databaseURL)
+	db, err := platform.NewDatabase(ctx, platform.DatabaseConfig{
+		URL:             cfg.DatabaseURL,
+		MaxConns:        cfg.DBMaxConns,
+		MinConns:        cfg.DBMinConns,
+		MaxConnLifetime: cfg.DBMaxConnLifetime,
+	})
 	if err != nil {
 		log.Fatalf("database initialization failed: %v", err)
 	}
@@ -32,7 +38,7 @@ func main() {
 	mux.HandleFunc("GET /health", platform.HealthHandler(db))
 
 	server := &http.Server{
-		Addr:              ":8080",
+		Addr:              cfg.HTTPAddr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
@@ -47,7 +53,7 @@ func main() {
 	serverErrors := make(chan error, 1)
 
 	go func() {
-		log.Println("Flashbulb API listening on :8080")
+		log.Printf("Flashbulb API listening on %s", cfg.HTTPAddr)
 		serverErrors <- server.ListenAndServe()
 	}()
 
