@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ibraheemcisse/flashbulb/internal/config"
+	"github.com/ibraheemcisse/flashbulb/internal/feed"
 	"github.com/ibraheemcisse/flashbulb/internal/platform"
 )
 
@@ -20,7 +21,10 @@ func main() {
 		log.Fatalf("configuration error: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		5*time.Second,
+	)
 	defer cancel()
 
 	db, err := platform.NewDatabase(ctx, platform.DatabaseConfig{
@@ -35,7 +39,18 @@ func main() {
 	defer db.Close()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", platform.HealthHandler(db))
+
+	mux.HandleFunc(
+		"GET /health",
+		platform.HealthHandler(db),
+	)
+
+	feedHandler := feed.NewHandler(db)
+
+	mux.HandleFunc(
+		"GET /feed",
+		feedHandler.GetFeed,
+	)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -60,7 +75,7 @@ func main() {
 	select {
 	case err := <-serverErrors:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("HTTP server failed: %v", err)
+			log.Fatalf("HTTP server failed: %v", err)
 		}
 
 	case <-signalCtx.Done():
