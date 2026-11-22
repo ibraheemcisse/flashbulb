@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/ibraheemcisse/flashbulb/internal/platform"
@@ -34,11 +37,43 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	log.Println("Flashbulb API listening on :8080")
+	signalCtx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
 
-	if err := server.ListenAndServe(); err != nil &&
-		err != http.ErrServerClosed {
-		log.Fatalf("HTTP server failed: %v", err)
+	serverErrors := make(chan error, 1)
+
+	go func() {
+		log.Println("Flashbulb API listening on :8080")
+		serverErrors <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serverErrors:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("HTTP server failed: %v", err)
+		}
+
+	case <-signalCtx.Done():
+		log.Println("Shutdown signal received")
+
+		shutdownCtx, shutdownCancel := context.WithTimeout(
+			context.Background(),
+			10*time.Second,
+		)
+		defer shutdownCancel()
+
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Graceful shutdown failed: %v", err)
+
+			if closeErr := server.Close(); closeErr != nil {
+				log.Printf("Forced server close failed: %v", closeErr)
+			}
+		}
+
+		log.Println("Flashbulb API stopped")
 	}
 }
-
